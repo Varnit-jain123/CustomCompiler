@@ -30,8 +30,8 @@ gcc --version
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/yourusername/online-c-compiler.git
-cd online-c-compiler
+git clone https://github.com/Varnit-jain123/CustomCompiler.git
+cd CustomCompiler-main
 ```
 
 ### 2. Setup Backend
