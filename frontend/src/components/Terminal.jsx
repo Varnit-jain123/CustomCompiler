@@ -1,15 +1,40 @@
 import React, { useEffect, useRef } from 'react';
-import { Terminal as TerminalIcon, X } from 'lucide-react';
-import './Terminal.css';
+import { Terminal as TerminalIcon, Trash2 } from 'lucide-react';
 
-const Terminal = ({ output, onClear, theme }) => {
+const Terminal = ({ output, onClear }) => {
   const terminalRef = useRef(null);
 
   useEffect(() => {
+    // Auto-scroll to bottom when new output arrives
     if (terminalRef.current) {
       terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
     }
   }, [output]);
+
+  const formatOutput = (text) => {
+    if (!text) return [];
+
+    const lines = text.split('\n');
+    return lines.map((line, index) => {
+      let className = 'terminal-line';
+      
+      if (line.toLowerCase().includes('error')) {
+        className += ' error';
+      } else if (line.toLowerCase().includes('warning')) {
+        className += ' warning';
+      } else if (line.toLowerCase().includes('success')) {
+        className += ' success';
+      } else if (line.includes('%')) {
+        className += ' progress';
+      }
+
+      return (
+        <div key={index} className={className}>
+          {line}
+        </div>
+      );
+    });
+  };
 
   return (
     <div className="terminal-container">
@@ -19,17 +44,22 @@ const Terminal = ({ output, onClear, theme }) => {
           <span>Output</span>
         </div>
         <button
+          className="terminal-clear-btn"
           onClick={onClear}
-          className="clear-btn"
-          title="Clear Output"
+          title="Clear output"
         >
-          <X size={16} />
-          Clear
+          <Trash2 size={14} />
         </button>
       </div>
-      <pre ref={terminalRef} className="terminal-output">
-        {output || '👋 Welcome to Online C Compiler!\n\nWrite your C code and click "Run" to compile and execute.\n\nKeyboard Shortcuts:\n  • Ctrl+Enter - Run code\n  • Ctrl+S - Save code\n  • Tab - Insert 4 spaces'}
-      </pre>
+      <div className="terminal-content" ref={terminalRef}>
+        {output ? (
+          formatOutput(output)
+        ) : (
+          <div className="terminal-empty">
+            Click "Verify" to compile or "Upload" to flash your board
+          </div>
+        )}
+      </div>
     </div>
   );
 };

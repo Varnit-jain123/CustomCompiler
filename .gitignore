@@ -1,0 +1,62 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+
+# Environment variables
+.env
+.env.local
+.env.production
+
+# Build outputs
+dist/
+build/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+backend/temp/*
+!backend/temp/.gitkeep
+
+# Executables
+backend/executables/firmware/*
+!backend/executables/firmware/.gitkeep
+backend/executables/cache/*
+!backend/executables/cache/.gitkeep
+
+# Logs
+backend/logs/*
+!backend/logs/.gitkeep
+*.log
+
+# Toolchains (too large for git)
+backend/toolchains/*
+!backend/toolchains/.gitkeep
+
+# Arduino cores (too large for git)
+backend/arduino-cores/*
+!backend/arduino-cores/.gitkeep
+
+# Libraries
+backend/libraries/*
+!backend/libraries/.gitkeep
+
+# Docker
+docker/volumes/
+
+# Testing
+coverage/
+.nyc_output/
+
+# Production
+*.tgz

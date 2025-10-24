@@ -1,104 +1,111 @@
-import React from 'react';
-import { Play, Save, Upload, FileText, Sun, Moon, ZoomIn, ZoomOut } from 'lucide-react';
-import './Toolbar.css';
+import React, { useState } from 'react';
+import { Play, Upload, Wifi, CheckCircle } from 'lucide-react';
+import BoardSelector from './BoardSelector';
+import PortSelector from './PortSelector';
 
 const Toolbar = ({
-  onRun,
-  onSave,
-  onLoad,
-  onNew,
-  onToggleTheme,
-  onFontSizeChange,
-  isRunning,
-  theme,
-  fontSize
+  selectedBoard,
+  onBoardSelect,
+  selectedPort,
+  onPortSelect,
+  onVerify,
+  onUpload,
+  onSerialMonitor,
+  isCompiling,
+  isUploading
 }) => {
-  const handleFontIncrease = () => {
-    if (fontSize < 24) onFontSizeChange(fontSize + 2);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  const handleVerify = () => {
+    if (!isCompiling && !isUploading && selectedBoard) {
+      onVerify();
+    }
   };
 
-  const handleFontDecrease = () => {
-    if (fontSize > 10) onFontSizeChange(fontSize - 2);
+  const handleUpload = () => {
+    if (!isCompiling && !isUploading && selectedBoard && selectedPort) {
+      onUpload();
+    }
+  };
+
+  const handleSerialMonitor = () => {
+    if (selectedPort && !isUploading) {
+      onSerialMonitor();
+    }
   };
 
   return (
     <div className="toolbar">
-      <div className="toolbar-left">
-        <h1 className="toolbar-title">
-          <span className="title-icon">⚡</span>
-          Online C Compiler
-        </h1>
+      <div className="toolbar-section">
+        <BoardSelector
+          selectedBoard={selectedBoard}
+          onSelect={onBoardSelect}
+        />
+        <PortSelector
+          selectedPort={selectedPort}
+          onSelect={onPortSelect}
+          disabled={isUploading}
+        />
       </div>
 
-      <div className="toolbar-center">
+      <div className="toolbar-section actions">
         <button
-          onClick={onRun}
-          disabled={isRunning}
-          className="toolbar-btn run-btn"
-          title="Run Code (Ctrl+Enter)"
+          className="toolbar-btn verify"
+          onClick={handleVerify}
+          disabled={isCompiling || isUploading || !selectedBoard}
+          title="Verify code (Compile without uploading)"
         >
-          <Play size={18} />
-          <span>{isRunning ? 'Running...' : 'Run'}</span>
+          <CheckCircle size={16} />
+          <span>{isCompiling ? 'Compiling...' : 'Verify'}</span>
+        </button>
+
+        <button
+          className="toolbar-btn upload"
+          onClick={handleUpload}
+          disabled={isCompiling || isUploading || !selectedBoard || !selectedPort}
+          title="Compile and upload to board"
+        >
+          <Upload size={16} />
+          <span>{isUploading ? 'Uploading...' : 'Upload'}</span>
+        </button>
+
+        <button
+          className="toolbar-btn serial"
+          onClick={handleSerialMonitor}
+          disabled={!selectedPort || isUploading}
+          title="Open Serial Monitor"
+        >
+          <Wifi size={16} />
+          <span>Serial Monitor</span>
         </button>
       </div>
 
-      <div className="toolbar-right">
+      <div className="toolbar-section">
         <button
-          onClick={onNew}
-          className="toolbar-btn"
-          title="New File"
+          className="toolbar-btn advanced"
+          onClick={() => setShowAdvanced(!showAdvanced)}
         >
-          <FileText size={18} />
-        </button>
-
-        <button
-          onClick={onSave}
-          className="toolbar-btn"
-          title="Save Code (Ctrl+S)"
-        >
-          <Save size={18} />
-        </button>
-
-        <label className="toolbar-btn" title="Load Code">
-          <Upload size={18} />
-          <input
-            type="file"
-            accept=".c,.cpp,.txt"
-            onChange={onLoad}
-            style={{ display: 'none' }}
-          />
-        </label>
-
-        <div className="toolbar-divider"></div>
-
-        <button
-          onClick={handleFontDecrease}
-          className="toolbar-btn"
-          title="Decrease Font Size"
-        >
-          <ZoomOut size={18} />
-        </button>
-
-        <span className="font-size-indicator">{fontSize}px</span>
-
-        <button
-          onClick={handleFontIncrease}
-          className="toolbar-btn"
-          title="Increase Font Size"
-        >
-          <ZoomIn size={18} />
-        </button>
-
-        <div className="toolbar-divider"></div>
-
-        <button
-          onClick={onToggleTheme}
-          className="toolbar-btn"
-          title="Toggle Theme"
-        >
-          {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+          Advanced {showAdvanced ? '▲' : '▼'}
         </button>
       </div>
+
+      {showAdvanced && (
+        <div className="toolbar-advanced">
+          <label>
+            Optimization:
+            <select defaultValue="Os">
+              <option value="O0">None (-O0)</option>
+              <option value="O1">Basic (-O1)</option>
+              <option value="O2">Full (-O2)</option>
+              <option value="Os">Size (-Os)</option>
+            </select>
+          </label>
+          <label>
+            <input type="checkbox" />
+            Debug symbols
+          </label>
+        </div>
+      )}
     </div>
   );
 };

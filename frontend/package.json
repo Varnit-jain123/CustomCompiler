@@ -1,11 +1,13 @@
 {
-  "name": "online-c-compiler-frontend",
+  "name": "arduino-compiler-frontend",
   "version": "1.0.0",
+  "description": "Frontend for Arduino-like embedded development platform",
   "private": true,
   "dependencies": {
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-scripts": "5.0.1",
+    "@monaco-editor/react": "^4.6.0",
+    "axios": "^1.6.2",
     "lucide-react": "^0.263.1"
   },
   "scripts": {
@@ -30,5 +32,9 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "devDependencies": {
+    "react-scripts": "5.0.1"
   }
+
 }
