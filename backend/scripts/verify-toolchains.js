@@ -9,47 +9,71 @@ async function verifyToolchains() {
 
   const results = await toolchainsConfig.validateToolchains();
 
-  console.log('AVR Toolchain:');
-  console.log('  GCC:', results.avr.gcc ? '✓ Found' : '✗ Not Found');
-  console.log('  AVRDUDE:', results.avr.avrdude ? '✓ Found' : '✗ Not Found');
-  console.log('  Status:', results.avr.installed ? '✓ READY' : '✗ NOT READY');
+  // AVR Toolchain
+  if (results.avr) {
+    console.log('AVR Toolchain:');
+    console.log('  GCC:', results.avr.gcc ? '✓ Found' : '✗ Not Found');
+    console.log('  AVRDUDE:', results.avr.avrdude ? '✓ Found' : '✗ Not Found');
+    console.log('  Arduino.h:', results.avr.arduinoH ? '✓ Found' : '✗ Not Found');
+    
+    if (results.avr.paths) {
+      console.log('  Paths:');
+      console.log('    GCC:', results.avr.paths.gcc);
+      console.log('    AVRDUDE:', results.avr.paths.avrdude);
+      console.log('    Arduino.h:', results.avr.paths.arduinoH);
+    }
+    
+    console.log('  Status:', results.avr.installed ? '✓ READY' : '✗ NOT READY');
+  } else {
+    console.log('AVR Toolchain: ✗ Not configured');
+  }
   console.log();
 
-  console.log('ESP32 Toolchain:');
-  console.log('  esptool:', results.esp32.esptool ? '✓ Found' : '✗ Not Found');
-  console.log('  Status:', results.esp32.installed ? '✓ READY' : '✗ NOT READY');
-  console.log();
+  // ESP32 Toolchain
+  if (results.esp32) {
+    console.log('ESP32 Toolchain:');
+    console.log('  esptool:', results.esp32.esptool ? '✓ Found' : '✗ Not Found');
+    console.log('  Status:', results.esp32.installed ? '✓ READY' : '✗ NOT READY');
+    console.log();
+  } else {
+    console.log('ESP32 Toolchain: (Not configured - Optional)');
+    console.log();
+  }
 
-  console.log('STM32 Toolchain:');
-  console.log('  GCC:', results.stm32.gcc ? '✓ Found' : '✗ Not Found');
-  console.log('  Status:', results.stm32.installed ? '✓ READY' : '✗ NOT READY');
-  console.log();
+  // STM32 Toolchain
+  if (results.stm32) {
+    console.log('STM32 Toolchain:');
+    console.log('  GCC:', results.stm32.gcc ? '✓ Found' : '✗ Not Found');
+    console.log('  Status:', results.stm32.installed ? '✓ READY' : '✗ NOT READY');
+    console.log();
+  } else {
+    console.log('STM32 Toolchain: (Not configured - Optional)');
+    console.log();
+  }
 
   console.log('='.repeat(60));
   
-  const allReady = results.avr.installed && results.esp32.installed && results.stm32.installed;
+  const avrReady = results.avr && results.avr.installed;
   
-  if (allReady) {
-    console.log('✓ All toolchains are ready!');
+  if (avrReady) {
+    console.log('✓ AVR toolchain is ready! You can compile Arduino code.');
   } else {
-    console.log('✗ Some toolchains are missing. Please install them.');
+    console.log('✗ AVR toolchain has issues. See details above.');
     console.log();
-    console.log('Installation instructions:');
-    console.log('1. Install Arduino IDE from: https://www.arduino.cc/en/software');
-    console.log('2. Open Arduino IDE and install:');
-    console.log('   - AVR boards (Tools → Board → Boards Manager → Arduino AVR Boards)');
-    console.log('   - ESP32 boards (Add ESP32 URL to preferences, then install from Boards Manager)');
-    console.log('3. Install Python: https://www.python.org/downloads/');
-    console.log('4. Run: pip install esptool');
-    console.log('5. Install ARM toolchain: https://developer.arm.com/downloads/-/gnu-rm');
+    console.log('Common fixes:');
+    console.log('1. Ensure Arduino IDE is installed');
+    console.log('2. Install Arduino AVR Boards via Arduino IDE Board Manager');
+    console.log('3. Restart this terminal/command prompt');
+    console.log('4. Check paths in src/config/toolchains.config.js');
   }
   
   console.log('='.repeat(60));
 
-  process.exit(allReady ? 0 : 1);
+  process.exit(avrReady ? 0 : 1);
 }
 
 verifyToolchains().catch(error => {
-  console.error('Error verifying toolchains:', error);
+  console.error('Error verifying toolchains:', error.message);
+  console.error(error.stack);
   process.exit(1);
 });

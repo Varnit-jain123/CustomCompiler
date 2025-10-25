@@ -1,146 +1,211 @@
 const path = require('path');
 const os = require('os');
-const config = require('./config');
+const fs = require('fs');
 
-// Detect Arduino installation path
+/**
+ * Return platform-safe executable name (adds .exe on Windows)
+ */
+const exe = (name) => {
+  if (process.platform === 'win32') return `${name}.exe`;
+  return name;
+};
+
+// Get Arduino path (points to the packages directory inside Arduino15)
 const getArduinoPath = () => {
   const homeDir = os.homedir();
-  
+
   if (process.platform === 'win32') {
-    return path.join(homeDir, 'AppData', 'Local', 'Arduino15', 'packages');
+    return path.join(homeDir, 'AppData', 'Local', 'Arduino15');
   } else if (process.platform === 'darwin') {
-    return path.join(homeDir, 'Library', 'Arduino15', 'packages');
+    return path.join(homeDir, 'Library', 'Arduino15');
   } else {
-    return path.join(homeDir, '.arduino15', 'packages');
+    return path.join(homeDir, '.arduino15');
   }
 };
 
-const arduinoPath = getArduinoPath();
+// Find latest version in a directory (numeric-aware)
+const findLatestVersion = (basePath) => {
+  try {
+    if (!fs.existsSync(basePath)) return null;
+    const entries = fs.readdirSync(basePath, { withFileTypes: true })
+      .filter(d => d.isDirectory())
+      .map(d => d.name);
+    if (entries.length === 0) return null;
+    entries.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+    return entries[0];
+  } catch (error) {
+    return null;
+  }
+};
+
+const arduinoBase = getArduinoPath(); // e.g. C:\Users\<user>\AppData\Local\Arduino15
+const packagesPath = path.join(arduinoBase, 'packages');
+
+const avrBasePath = path.join(packagesPath, 'arduino', 'hardware', 'avr');
+const avrVersion = findLatestVersion(avrBasePath) || '1.8.6';
+
+const avrToolchainBasePath = path.join(packagesPath, 'arduino', 'tools', 'avr-gcc');
+const avrToolchainVersion = findLatestVersion(avrToolchainBasePath) || '7.3.0-atmel3.6.1-arduino7';
+
+const avrdudeBasePath = path.join(packagesPath, 'arduino', 'tools', 'avrdude');
+const avrdudeVersion = findLatestVersion(avrdudeBasePath) || '6.3.0-arduino17';
+
+console.log('Toolchain paths detected:');
+console.log('  Arduino Base:', arduinoBase);
+console.log('  AVR Core version:', avrVersion);
+console.log('  AVR GCC version:', avrToolchainVersion);
+console.log('  AVRDUDE version:', avrdudeVersion);
 
 module.exports = {
   // AVR Toolchain
   avr: {
     name: 'AVR Toolchain',
-    basePath: path.join(arduinoPath, 'arduino', 'tools', 'avr-gcc', '7.3.0-atmel3.6.1-arduino7'),
+    basePath: path.join(packagesPath, 'arduino', 'tools', 'avr-gcc', avrToolchainVersion),
     compiler: {
-      gcc: path.join(arduinoPath, 'arduino', 'tools', 'avr-gcc', '7.3.0-atmel3.6.1-arduino7', 'bin', 'avr-gcc.exe'),
-      gpp: path.join(arduinoPath, 'arduino', 'tools', 'avr-gcc', '7.3.0-atmel3.6.1-arduino7', 'bin', 'avr-g++.exe'),
-      ar: path.join(arduinoPath, 'arduino', 'tools', 'avr-gcc', '7.3.0-atmel3.6.1-arduino7', 'bin', 'avr-ar.exe'),
-      objcopy: path.join(arduinoPath, 'arduino', 'tools', 'avr-gcc', '7.3.0-atmel3.6.1-arduino7', 'bin', 'avr-objcopy.exe'),
-      size: path.join(arduinoPath, 'arduino', 'tools', 'avr-gcc', '7.3.0-atmel3.6.1-arduino7', 'bin', 'avr-size.exe')
+      gcc: path.join(packagesPath, 'arduino', 'tools', 'avr-gcc', avrToolchainVersion, 'bin', exe('avr-gcc')),
+      gpp: path.join(packagesPath, 'arduino', 'tools', 'avr-gcc', avrToolchainVersion, 'bin', exe('avr-g++')),
+      ar: path.join(packagesPath, 'arduino', 'tools', 'avr-gcc', avrToolchainVersion, 'bin', exe('avr-ar')),
+      objcopy: path.join(packagesPath, 'arduino', 'tools', 'avr-gcc', avrToolchainVersion, 'bin', exe('avr-objcopy')),
+      size: path.join(packagesPath, 'arduino', 'tools', 'avr-gcc', avrToolchainVersion, 'bin', exe('avr-size'))
     },
     uploader: {
-      avrdude: path.join(arduinoPath, 'arduino', 'tools', 'avrdude', '6.3.0-arduino17', 'bin', 'avrdude.exe'),
-      configFile: path.join(arduinoPath, 'arduino', 'tools', 'avrdude', '6.3.0-arduino17', 'etc', 'avrdude.conf')
+      avrdude: path.join(packagesPath, 'arduino', 'tools', 'avrdude', avrdudeVersion, 'bin', exe('avrdude')),
+      configFile: path.join(packagesPath, 'arduino', 'tools', 'avrdude', avrdudeVersion, 'etc', 'avrdude.conf')
     },
-    version: '7.3.0',
-    arduinoCore: path.join(arduinoPath, 'arduino', 'hardware', 'avr', '1.8.6')
+    version: avrToolchainVersion,
+    arduinoCore: path.join(packagesPath, 'arduino', 'hardware', 'avr', avrVersion),
+    coreIncludes: [
+      path.join(packagesPath, 'arduino', 'hardware', 'avr', avrVersion, 'cores', 'arduino'),
+      path.join(packagesPath, 'arduino', 'hardware', 'avr', avrVersion, 'variants', 'standard')
+    ]
   },
 
-  // ESP32 Toolchain
-  esp32: {
-    name: 'ESP32 Toolchain',
-    basePath: path.join(arduinoPath, 'esp32', 'tools'),
-    compiler: {
-      gcc: 'xtensa-esp32-elf-gcc', // Will be found in PATH or specify full path
-      gpp: 'xtensa-esp32-elf-g++',
-      ar: 'xtensa-esp32-elf-ar',
-      objcopy: 'xtensa-esp32-elf-objcopy',
-      size: 'xtensa-esp32-elf-size'
-    },
-    uploader: {
-      esptool: 'esptool.py', // Installed via pip, should be in PATH
-      espota: 'espota.py'
-    },
-    version: '8.4.0',
-    arduinoCore: path.join(arduinoPath, 'esp32', 'hardware', 'esp32', '2.0.14'),
-    sdk: {
-      path: path.join(arduinoPath, 'esp32', 'hardware', 'esp32', '2.0.14', 'tools', 'sdk'),
-      version: '4.4'
-    },
-    bootloader: path.join(arduinoPath, 'esp32', 'hardware', 'esp32', '2.0.14', 'tools', 'sdk', 'esp32', 'bin', 'bootloader_dio_80m.bin'),
-    partitions: path.join(arduinoPath, 'esp32', 'hardware', 'esp32', '2.0.14', 'tools', 'partitions', 'default.bin'),
-    bootApp: path.join(arduinoPath, 'esp32', 'hardware', 'esp32', '2.0.14', 'tools', 'partitions', 'boot_app0.bin')
-  },
+  // ESP32 Toolchain (optional - null if not installed)
+  esp32: null,
 
-  // STM32 Toolchain
-  stm32: {
-    name: 'STM32 Toolchain',
-    basePath: 'C:\\Program Files (x86)\\GNU Arm Embedded Toolchain\\10 2021.10',
-    compiler: {
-      gcc: 'arm-none-eabi-gcc',
-      gpp: 'arm-none-eabi-g++',
-      ar: 'arm-none-eabi-ar',
-      objcopy: 'arm-none-eabi-objcopy',
-      size: 'arm-none-eabi-size'
-    },
-    uploader: {
-      stm32flash: 'stm32flash',
-      stlink: 'st-flash',
-      openocd: 'openocd'
-    },
-    version: '10.3.1',
-    arduinoCore: path.join(arduinoPath, 'STMicroelectronics', 'hardware', 'stm32', '2.6.0'),
-    cmsis: path.join(arduinoPath, 'STMicroelectronics', 'hardware', 'stm32', '2.6.0', 'system', 'Drivers', 'CMSIS')
-  },
+  // STM32 Toolchain (optional - null if not installed)
+  stm32: null,
 
-  // Validation function
-  validateToolchains: async function() {
+  /**
+   * Validate toolchains and return results
+   * - works with absolute executable paths (like avr-gcc.exe)
+   * - and also works when testing commands available on PATH (like esptool.py or arm-none-eabi-gcc)
+   */
+  validateToolchains: async function () {
     const { spawn } = require('child_process');
     const results = {};
 
-    const testCommand = (command) => {
+    const testCommand = (cmdOrPath, args = ['--version'], timeoutMs = 5000) => {
       return new Promise((resolve) => {
-        const process = spawn(command, ['--version'], { shell: true });
-        
-        let found = false;
-        process.on('error', () => {
-          resolve(false);
-        });
-        
-        process.stdout.on('data', () => {
-          found = true;
-        });
-        
-        process.on('close', () => {
-          resolve(found);
-        });
+        let resolved = false;
+        const done = (val) => {
+          if (!resolved) {
+            resolved = true;
+            resolve(val);
+          }
+        };
 
-        setTimeout(() => {
-          process.kill();
-          resolve(false);
-        }, 3000);
+        try {
+          // If an absolute path or path contains separators, check existence first
+          const looksLikePath = path.isAbsolute(cmdOrPath) || cmdOrPath.includes(path.sep) || cmdOrPath.includes('/');
+          if (looksLikePath && !fs.existsSync(cmdOrPath)) {
+            console.log(`  File not found: ${cmdOrPath}`);
+            done(false);
+            return;
+          }
+
+          // Use shell on Windows to allow launching scripts on PATH; shell:true helps with commands like "esptool.py"
+          const proc = spawn(cmdOrPath, args, {
+            shell: true,
+            stdio: ['ignore', 'pipe', 'pipe'],
+            windowsHide: true
+          });
+
+          let sawOutput = false;
+
+          proc.on('error', (err) => {
+            // command not found or spawn failed
+            //console.log(`  Error testing ${cmdOrPath}: ${err.message}`);
+            done(false);
+          });
+
+          proc.stdout.on('data', () => { sawOutput = true; });
+          proc.stderr.on('data', () => { sawOutput = true; });
+
+          proc.on('close', (code) => {
+            done(sawOutput || code === 0);
+          });
+
+          // safety timeout
+          const to = setTimeout(() => {
+            try { proc.kill(); } catch (e) {}
+            done(false);
+          }, timeoutMs);
+
+          // clear timeout when resolved
+          const checkResolve = setInterval(() => {
+            if (resolved) {
+              clearTimeout(to);
+              clearInterval(checkResolve);
+            }
+          }, 50);
+        } catch (error) {
+          // something unexpected
+          //console.log('  Exception testing command:', error.message);
+          done(false);
+        }
       });
     };
 
-    // Test AVR
+    // Test AVR toolchain binaries (full paths)
+    console.log('Testing AVR toolchain...');
     const avrGccExists = await testCommand(this.avr.compiler.gcc);
     const avrdudeExists = await testCommand(this.avr.uploader.avrdude);
+
+    // Check Arduino.h
+    const arduinoHPath = path.join(this.avr.coreIncludes[0], 'Arduino.h');
+    const arduinoHExists = fs.existsSync(arduinoHPath);
+
     results.avr = {
-      installed: avrGccExists && avrdudeExists,
-      gcc: avrGccExists,
-      avrdude: avrdudeExists
+      installed: !!(avrGccExists && avrdudeExists && arduinoHExists),
+      gcc: !!avrGccExists,
+      avrdude: !!avrdudeExists,
+      arduinoH: !!arduinoHExists,
+      paths: {
+        gcc: this.avr.compiler.gcc,
+        avrdude: this.avr.uploader.avrdude,
+        arduinoH: arduinoHPath,
+        coreIncludes: this.avr.coreIncludes
+      }
     };
 
-    // Test ESP32
-    const esptoolExists = await testCommand('esptool.py');
-    results.esp32 = {
-      installed: esptoolExists,
-      esptool: esptoolExists
-    };
+    // Test ESP32 (if configured) — try esptool.py on PATH
+    if (this.esp32) {
+      console.log('Testing ESP32 toolchain...');
+      const esptoolExists = await testCommand('esptool.py', ['--help']);
+      results.esp32 = {
+        installed: !!esptoolExists,
+        esptool: !!esptoolExists
+      };
+    }
 
-    // Test STM32
-    const armGccExists = await testCommand('arm-none-eabi-gcc');
-    results.stm32 = {
-      installed: armGccExists,
-      gcc: armGccExists
-    };
+    // Test STM32 (if configured) — try arm-none-eabi-gcc on PATH (or absolute path if provided)
+    if (this.stm32) {
+      console.log('Testing STM32 toolchain...');
+      // If you configured a full path to arm-none-eabi-gcc in this.stm32.compiler, test that, else test name on PATH
+      const armCmd = this.stm32.compiler && this.stm32.compiler.gcc ? this.stm32.compiler.gcc : 'arm-none-eabi-gcc';
+      const armGccExists = await testCommand(armCmd);
+      results.stm32 = {
+        installed: !!armGccExists,
+        gcc: !!armGccExists
+      };
+    }
 
     return results;
   },
 
-  // Get toolchain configuration by architecture
-  getToolchain: function(architecture) {
+  // Convenience accessor
+  getToolchain: function (architecture) {
     return this[architecture];
   }
 };

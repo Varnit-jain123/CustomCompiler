@@ -139,7 +139,6 @@ class ToolchainService {
       }
     }
   }
-
   /**
    * Get include paths for board
    */
@@ -147,16 +146,24 @@ class ToolchainService {
     const paths = [];
 
     // Add core paths from board config
-    for (const includePath of board.compiler.includes) {
-      const resolved = includePath
-        .replace('{arduino.cores}', config.paths.arduinoCores + '/' + board.architecture)
-        .replace('{arduino.variants}', config.paths.arduinoCores + '/' + board.architecture + '/variants');
-      
-      paths.push(resolved);
+    if (board.compiler.includes && Array.isArray(board.compiler.includes)) {
+      for (const includePath of board.compiler.includes) {
+        // Path is already resolved from toolchains.config
+        paths.push(includePath);
+      }
     }
 
-    // Add standard library path
-    paths.push(path.join(config.paths.libraries));
+    // Add standard library path if it exists
+    const librariesPath = config.paths.libraries;
+    try {
+      if (require('fs').existsSync(librariesPath)) {
+        paths.push(librariesPath);
+      }
+    } catch (error) {
+      // Ignore if libraries path doesn't exist
+    }
+
+    logger.info(`Include paths for ${board.name}: ${paths.join(', ')}`);
 
     return paths;
   }

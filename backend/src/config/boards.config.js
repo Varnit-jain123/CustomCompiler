@@ -1,3 +1,188 @@
+// const path = require('path');
+
+// // Get toolchain config for dynamic include paths
+// let toolchainsConfig;
+// try {
+//   toolchainsConfig = require('./toolchains.config');
+// } catch (error) {
+//   console.error('Failed to load toolchains config:', error);
+//   toolchainsConfig = { avr: null };
+// }
+
+// module.exports = {
+//   boards: [
+//     {
+//       id: 'arduino_uno',
+//       name: 'Arduino Uno',
+//       manufacturer: 'Arduino',
+//       family: 'AVR',
+//       architecture: 'avr',
+//       mcu: 'atmega328p',
+//       f_cpu: '16000000L',
+//       uploadSpeed: 115200,
+//       specs: {
+//         flash: 32768,
+//         sram: 2048,
+//         eeprom: 1024,
+//         digitalPins: 14,
+//         analogPins: 6,
+//         pwmPins: [3, 5, 6, 9, 10, 11]
+//       },
+//       compiler: {
+//         toolchain: 'avr',
+//         executable: 'avr-gcc',
+//         flags: [
+//           '-c',
+//           '-g',
+//           '-Os',
+//           '-w',
+//           '-std=gnu++11',
+//           '-fpermissive',
+//           '-fno-exceptions',
+//           '-ffunction-sections',
+//           '-fdata-sections',
+//           '-fno-threadsafe-statics',
+//           '-Wno-error=narrowing',
+//           '-MMD',
+//           '-flto'
+//         ],
+//         defines: [
+//           '-DF_CPU=16000000L',
+//           '-DARDUINO=10819',
+//           '-DARDUINO_AVR_UNO',
+//           '-DARDUINO_ARCH_AVR'
+//         ],
+//         includes: toolchainsConfig.avr ? toolchainsConfig.avr.coreIncludes : []
+//       },
+//       linker: {
+//         flags: [
+//           '-w',
+//           '-Os',
+//           '-g',
+//           '-flto',
+//           '-fuse-linker-plugin',
+//           '-Wl,--gc-sections',
+//           '-mmcu=atmega328p'
+//         ],
+//         libs: ['-lm']
+//       },
+//       uploader: {
+//         tool: 'avrdude',
+//         protocol: 'arduino',
+//         flags: [
+//           '-C{avrdude.config}',
+//           '-v',
+//           '-patmega328p',
+//           '-carduino',
+//           '-P{serial.port}',
+//           '-b115200',
+//           '-D',
+//           '-Uflash:w:{firmware.hex}:i'
+//         ]
+//       },
+//       vid_pid: [
+//         { vid: '0x2341', pid: '0x0043' },
+//         { vid: '0x2341', pid: '0x0001' },
+//         { vid: '0x2A03', pid: '0x0043' }
+//       ]
+//     },
+//     {
+//       id: 'arduino_mega',
+//       name: 'Arduino Mega 2560',
+//       manufacturer: 'Arduino',
+//       family: 'AVR',
+//       architecture: 'avr',
+//       mcu: 'atmega2560',
+//       f_cpu: '16000000L',
+//       uploadSpeed: 115200,
+//       specs: {
+//         flash: 262144,
+//         sram: 8192,
+//         eeprom: 4096,
+//         digitalPins: 54,
+//         analogPins: 16,
+//         pwmPins: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+//       },
+//       compiler: {
+//         toolchain: 'avr',
+//         executable: 'avr-gcc',
+//         flags: [
+//           '-c',
+//           '-g',
+//           '-Os',
+//           '-w',
+//           '-std=gnu++11',
+//           '-fpermissive',
+//           '-fno-exceptions',
+//           '-ffunction-sections',
+//           '-fdata-sections',
+//           '-fno-threadsafe-statics',
+//           '-Wno-error=narrowing',
+//           '-MMD',
+//           '-flto'
+//         ],
+//         defines: [
+//           '-DF_CPU=16000000L',
+//           '-DARDUINO=10819',
+//           '-DARDUINO_AVR_MEGA2560',
+//           '-DARDUINO_ARCH_AVR'
+//         ],
+//         includes: toolchainsConfig.avr ? [
+//           toolchainsConfig.avr.coreIncludes[0],
+//           path.join(path.dirname(toolchainsConfig.avr.coreIncludes[1]), 'mega')
+//         ] : []
+//       },
+//       linker: {
+//         flags: [
+//           '-w',
+//           '-Os',
+//           '-g',
+//           '-flto',
+//           '-fuse-linker-plugin',
+//           '-Wl,--gc-sections',
+//           '-mmcu=atmega2560'
+//         ],
+//         libs: ['-lm']
+//       },
+//       uploader: {
+//         tool: 'avrdude',
+//         protocol: 'wiring',
+//         flags: [
+//           '-C{avrdude.config}',
+//           '-v',
+//           '-patmega2560',
+//           '-cwiring',
+//           '-P{serial.port}',
+//           '-b115200',
+//           '-D',
+//           '-Uflash:w:{firmware.hex}:i'
+//         ]
+//       },
+//       vid_pid: [
+//         { vid: '0x2341', pid: '0x0010' },
+//         { vid: '0x2341', pid: '0x0042' },
+//         { vid: '0x2A03', pid: '0x0010' }
+//       ]
+//     }
+//   ],
+
+//   categories: {
+//     'Arduino AVR': ['arduino_uno', 'arduino_mega']
+//   },
+
+//   getBoard: function(boardId) {
+//     return this.boards.find(board => board.id === boardId);
+//   },
+
+//   getBoardsByArchitecture: function(architecture) {
+//     return this.boards.filter(board => board.architecture === architecture);
+//   },
+
+//   getArchitectures: function() {
+//     return [...new Set(this.boards.map(board => board.architecture))];
+//   }
+// };
+
 module.exports = {
   boards: [
     // ========== Arduino AVR Boards ==========
