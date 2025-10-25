@@ -5,7 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js",
+    "dev": "nodemon --ignore temp/ --ignore executables/firmware/ --ignore logs/ server.js",
     "verify-toolchains": "node scripts/verify-toolchains.js",
     "test": "jest",
     "lint": "eslint ."

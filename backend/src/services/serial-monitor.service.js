@@ -6,6 +6,11 @@ const deviceManager = require('./device-manager.service');
 class SerialMonitorService {
   constructor() {
     this.connections = new Map();
+
+    // ✅ Automatically close ports on process exit
+    process.on('exit', () => this.disconnectAll());
+    process.on('SIGINT', () => this.disconnectAll());
+    process.on('SIGTERM', () => this.disconnectAll());
   }
 
   /**
@@ -13,14 +18,22 @@ class SerialMonitorService {
    */
   async connect(portPath, baudRate, options = {}) {
     try {
-      // Check if port is locked
+      // Check if port is locked by another operation
       if (deviceManager.isPortLocked(portPath)) {
         throw new Error('Port is locked by another operation');
       }
 
-      // Check if already connected
+      // ✅ Prevent reopening if already connected or connecting
       if (this.connections.has(portPath)) {
-        throw new Error('Port is already connected');
+        const existing = this.connections.get(portPath);
+        if (existing.port && existing.port.isOpen) {
+          logger.warn(`Serial port ${portPath} is already open`);
+          return;
+        }
+        if (existing.connecting) {
+          logger.warn(`Serial port ${portPath} is still connecting`);
+          return;
+        }
       }
 
       logger.info(`Opening serial port ${portPath} at ${baudRate} baud`);
@@ -35,16 +48,20 @@ class SerialMonitorService {
         autoOpen: false
       });
 
+      // Mark as connecting (to prevent concurrent opens)
+      this.connections.set(portPath, { connecting: true });
+
       return new Promise((resolve, reject) => {
         port.open((err) => {
           if (err) {
             logger.error(`Failed to open ${portPath}:`, err);
+            this.connections.delete(portPath); // cleanup failed attempt
             reject(err);
             return;
           }
 
           const parser = port.pipe(new ReadlineParser({ delimiter: '\n' }));
-          
+
           const connection = {
             port,
             parser,
@@ -55,19 +72,19 @@ class SerialMonitorService {
             startTime: Date.now()
           };
 
-          // Setup data listener
+          // Data listener
           parser.on('data', (data) => {
             connection.bytesReceived += Buffer.byteLength(data);
             this.broadcastData(portPath, data);
           });
 
-          // Setup error listener
+          // Error listener
           port.on('error', (err) => {
             logger.error(`Serial error on ${portPath}:`, err);
             this.broadcastError(portPath, err.message);
           });
 
-          // Setup close listener
+          // Close listener
           port.on('close', () => {
             logger.info(`Serial port ${portPath} closed`);
             this.connections.delete(portPath);
@@ -91,8 +108,8 @@ class SerialMonitorService {
    */
   async disconnect(portPath) {
     const connection = this.connections.get(portPath);
-    
-    if (!connection) {
+
+    if (!connection || !connection.port) {
       throw new Error('Port is not connected');
     }
 
@@ -116,8 +133,8 @@ class SerialMonitorService {
    */
   async sendData(portPath, data, lineEnding = '\n') {
     const connection = this.connections.get(portPath);
-    
-    if (!connection) {
+
+    if (!connection || !connection.port || !connection.port.isOpen) {
       throw new Error('Port is not connected');
     }
 
@@ -143,11 +160,9 @@ class SerialMonitorService {
    */
   getStatus(portPath) {
     const connection = this.connections.get(portPath);
-    
-    if (!connection) {
-      return {
-        connected: false
-      };
+
+    if (!connection || !connection.port || !connection.port.isOpen) {
+      return { connected: false };
     }
 
     return {
@@ -228,11 +243,11 @@ class SerialMonitorService {
   }
 
   /**
-   * Disconnect all ports
+   * Disconnect all ports (called on exit or restart)
    */
   async disconnectAll() {
     const ports = Array.from(this.connections.keys());
-    
+
     for (const port of ports) {
       try {
         await this.disconnect(port);
@@ -240,6 +255,8 @@ class SerialMonitorService {
         logger.error(`Failed to disconnect ${port}:`, error);
       }
     }
+
+    logger.info('All serial ports disconnected.');
   }
 }
 
