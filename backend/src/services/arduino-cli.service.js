@@ -25,16 +25,12 @@ class ArduinoCLIService {
       const sketchFile = path.join(sketchDir, 'sketch.ino');
       const buildDir = path.join(baseDir, 'build');
 
-      // Create directories recursively
       await fs.mkdir(sketchDir, { recursive: true });
       await fs.mkdir(buildDir, { recursive: true });
-
-      // Write Arduino code to sketch.ino
       await fs.writeFile(sketchFile, code, 'utf-8');
 
       logger.info(`Created sketch: ${sketchFile}`);
 
-      // Get FQBN (Fully Qualified Board Name)
       const fqbn = this.getBoardFQBN(board.id);
       logger.info(`Using FQBN: ${fqbn}`);
 
@@ -48,25 +44,26 @@ class ArduinoCLIService {
       ];
 
       logger.info(`Executing: arduino-cli ${compileArgs.join(' ')}`);
-
       const result = await this.executeCommand(this.cliPath, compileArgs);
 
       logger.info('Compilation completed successfully');
 
-      // Find generated hex file
-      const files = await fs.readdir(buildDir);
-      const hexFile = files.find(f => f.endsWith('.hex'));
-
-      if (!hexFile) {
-        throw new Error('Hex file not generated after compilation');
+      // Find generated firmware file
+      let firmwareFile;
+      if (board.architecture === 'esp32') {
+        firmwareFile = (await fs.readdir(buildDir)).find(f => f.endsWith('.bin'));
+      } else {
+        firmwareFile = (await fs.readdir(buildDir)).find(f => f.endsWith('.hex'));
       }
 
-      const hexPath = path.join(buildDir, hexFile);
-      const hexStats = await fs.stat(hexPath);
+      if (!firmwareFile) {
+        throw new Error(`${board.architecture === 'esp32' ? 'Bin' : 'Hex'} file not generated after compilation`);
+      }
 
-      // Parse memory usage from compiler output
+      const firmwarePath = path.join(buildDir, firmwareFile);
+      const firmwareStats = await fs.stat(firmwarePath);
+
       const memoryUsage = this.parseMemoryUsage(result.stdout + result.stderr, board);
-
       const buildTime = Date.now() - startTime;
 
       logger.info(`Compilation ${compilationId}: Success in ${buildTime}ms`);
@@ -77,8 +74,8 @@ class ArduinoCLIService {
         code,
         board,
         buildDir,
-        hexPath,
-        hexFile
+        firmwarePath,
+        firmwareFile
       });
 
       return {
@@ -92,8 +89,8 @@ class ArduinoCLIService {
           board: board.id,
           architecture: board.architecture,
           timestamp: new Date().toISOString(),
-          hexFile: hexPath,
-          hexSize: hexStats.size
+          firmwareFile: firmwarePath,
+          firmwareSize: firmwareStats.size
         }
       };
 
@@ -120,10 +117,7 @@ class ArduinoCLIService {
     };
 
     const fqbn = fqbnMap[boardId];
-    if (!fqbn) {
-      throw new Error(`Unknown board ID: ${boardId}`);
-    }
-
+    if (!fqbn) throw new Error(`Unknown board ID: ${boardId}`);
     return fqbn;
   }
 
@@ -132,29 +126,17 @@ class ArduinoCLIService {
    */
   executeCommand(command, args) {
     return new Promise((resolve, reject) => {
-      const proc = spawn(command, args, {
-        shell: true,
-        cwd: config.paths.temp,
-        env: process.env
-      });
+      const proc = spawn(command, args, { shell: true, cwd: config.paths.temp, env: process.env });
 
       let stdout = '';
       let stderr = '';
 
-      proc.stdout.on('data', (data) => {
-        const text = data.toString();
-        stdout += text;
-      });
+      proc.stdout.on('data', data => { stdout += data.toString(); });
+      proc.stderr.on('data', data => { stderr += data.toString(); });
 
-      proc.stderr.on('data', (data) => {
-        const text = data.toString();
-        stderr += text;
-      });
-
-      proc.on('close', (code) => {
-        if (code === 0) {
-          resolve({ stdout, stderr, code });
-        } else {
+      proc.on('close', code => {
+        if (code === 0) resolve({ stdout, stderr, code });
+        else {
           const error = new Error(`Command failed with exit code ${code}`);
           error.stdout = stdout;
           error.stderr = stderr;
@@ -163,13 +145,8 @@ class ArduinoCLIService {
         }
       });
 
-      proc.on('error', (err) => {
-        err.stdout = stdout;
-        err.stderr = stderr;
-        reject(err);
-      });
+      proc.on('error', err => { err.stdout = stdout; err.stderr = stderr; reject(err); });
 
-      // Timeout after 2 minutes
       setTimeout(() => {
         proc.kill();
         const error = new Error('Compilation timeout (120s)');
@@ -184,28 +161,19 @@ class ArduinoCLIService {
    * Parse memory usage from Arduino CLI output
    */
   parseMemoryUsage(output, board) {
-    // Example: "Sketch uses 928 bytes (2%) of program storage space."
     const flashMatch = output.match(/Sketch uses (\d+) bytes \((\d+)%\) of program storage/);
-    
-    // Example: "Global variables use 9 bytes (0%) of dynamic memory"
     const ramMatch = output.match(/Global variables use (\d+) bytes \((\d+)%\)/);
-
-    const flashUsed = flashMatch ? parseInt(flashMatch[1]) : 0;
-    const flashPercent = flashMatch ? parseFloat(flashMatch[2]) : 0;
-    
-    const ramUsed = ramMatch ? parseInt(ramMatch[1]) : 0;
-    const ramPercent = ramMatch ? parseFloat(ramMatch[2]) : 0;
 
     return {
       flash: {
-        used: flashUsed,
+        used: flashMatch ? parseInt(flashMatch[1]) : 0,
         total: board.specs.flash,
-        percentage: flashPercent.toFixed(1)
+        percentage: flashMatch ? parseFloat(flashMatch[2]).toFixed(1) : 0
       },
       ram: {
-        used: ramUsed,
+        used: ramMatch ? parseInt(ramMatch[1]) : 0,
         total: board.specs.sram,
-        percentage: ramPercent.toFixed(1)
+        percentage: ramMatch ? parseFloat(ramMatch[2]).toFixed(1) : 0
       }
     };
   }
@@ -214,65 +182,34 @@ class ArduinoCLIService {
    * Parse warnings from compiler output
    */
   parseWarnings(stderr) {
-    const warnings = [];
-    const lines = stderr.split('\n');
-
-    for (const line of lines) {
-      if (line.includes('warning:')) {
-        warnings.push(line.trim());
-      }
-    }
-
-    return warnings;
+    return stderr.split('\n').filter(line => line.includes('warning:')).map(line => line.trim());
   }
 
   /**
    * Store firmware in executables directory
    */
-  async storeFirmware({ compilationId, code, board, buildDir, hexPath, hexFile }) {
+  async storeFirmware({ compilationId, code, board, buildDir, firmwarePath, firmwareFile }) {
     const timestamp = new Date().toISOString().replace(/:/g, '-');
     const codeHash = crypto.createHash('sha256').update(code).digest('hex').substring(0, 8);
-    
-    const storageDir = path.join(
-      config.paths.firmware,
-      `${timestamp}-${board.id}-${codeHash}`
-    );
 
+    const storageDir = path.join(config.paths.firmware, `${timestamp}-${board.id}-${codeHash}`);
     await fs.mkdir(storageDir, { recursive: true });
 
-    // Copy hex file
-    await fs.copyFile(hexPath, path.join(storageDir, 'firmware.hex'));
-
-    // Save source code
+    const ext = board.architecture === 'esp32' ? 'bin' : 'hex';
+    await fs.copyFile(firmwarePath, path.join(storageDir, `firmware.${ext}`));
     await fs.writeFile(path.join(storageDir, 'source.ino'), code);
 
-    // Save metadata
     const metadata = {
       compilationId,
       timestamp: new Date().toISOString(),
-      board: {
-        id: board.id,
-        name: board.name,
-        architecture: board.architecture
-      },
-      firmware: {
-        format: 'hex',
-        hexFile: hexFile
-      },
-      source: {
-        hash: codeHash,
-        lines: code.split('\n').length
-      },
+      board: { id: board.id, name: board.name, architecture: board.architecture },
+      firmware: { format: ext, file: firmwareFile },
+      source: { hash: codeHash, lines: code.split('\n').length },
       method: 'arduino-cli'
     };
 
-    await fs.writeFile(
-      path.join(storageDir, 'metadata.json'),
-      JSON.stringify(metadata, null, 2)
-    );
-
+    await fs.writeFile(path.join(storageDir, 'metadata.json'), JSON.stringify(metadata, null, 2));
     logger.info(`Firmware stored at ${storageDir}`);
-
     return storageDir;
   }
 
@@ -285,38 +222,34 @@ class ArduinoCLIService {
     try {
       logger.info(`Upload ${uploadId}: Starting to ${board.name} on ${port}`);
 
-      // Find hex file
       const files = await fs.readdir(firmwarePath);
-      const hexFile = files.find(f => f.endsWith('.hex'));
+      const firmwareFile = board.architecture === 'esp32'
+        ? files.find(f => f.endsWith('.bin'))
+        : files.find(f => f.endsWith('.hex'));
 
-      if (!hexFile) {
-        throw new Error('Hex file not found in firmware directory');
-      }
+      if (!firmwareFile) throw new Error('Firmware file not found in firmware directory');
 
-      const hexPath = path.join(firmwarePath, hexFile);
+      const firmwareFullPath = path.join(firmwarePath, firmwareFile);
       const fqbn = this.getBoardFQBN(board.id);
 
-      // Upload using Arduino CLI
       const uploadArgs = [
         'upload',
         '--fqbn', fqbn,
         '--port', port,
-        '--input-file', hexPath,
+        '--input-file', firmwareFullPath,
         '--verbose'
       ];
 
       logger.info(`Executing: arduino-cli ${uploadArgs.join(' ')}`);
-
-      const result = await this.executeCommand(this.cliPath, uploadArgs);
+      await this.executeCommand(this.cliPath, uploadArgs);
 
       const duration = Date.now() - startTime;
-
       logger.info(`Upload ${uploadId}: Success in ${duration}ms`);
 
       return {
         success: true,
         duration,
-        bytesWritten: (await fs.stat(hexPath)).size,
+        bytesWritten: (await fs.stat(firmwareFullPath)).size,
         verified: true
       };
 
@@ -337,15 +270,9 @@ class ArduinoCLIService {
     try {
       const result = await this.executeCommand(this.cliPath, ['lib', 'list', '--format', 'json']);
       const libraries = JSON.parse(result.stdout);
-      
       return libraries
         .filter(lib => !lib.architectures || lib.architectures.includes(architecture) || lib.architectures.includes('*'))
-        .map(lib => ({
-          name: lib.name,
-          version: lib.latest,
-          folder: lib.name,
-          architectures: lib.architectures || ['*']
-        }));
+        .map(lib => ({ name: lib.name, version: lib.latest, folder: lib.name, architectures: lib.architectures || ['*'] }));
     } catch (error) {
       logger.error('Failed to get libraries:', error);
       return [];
