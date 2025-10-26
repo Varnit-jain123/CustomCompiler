@@ -2,6 +2,7 @@ const { spawn } = require('child_process');
 const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
+const he = require('he'); // Decode HTML entities
 const config = require('../config/config');
 const logger = require('../utils/logger.util');
 
@@ -19,7 +20,7 @@ class ArduinoCLIService {
     try {
       logger.info(`Arduino CLI Compilation ${compilationId}: Starting for ${board.name}`);
 
-      // Create sketch directory structure: temp/compile-<uuid>/sketch/sketch.ino
+      // Create sketch directory structure
       const baseDir = path.join(config.paths.temp, `compile-${compilationId}`);
       const sketchDir = path.join(baseDir, 'sketch');
       const sketchFile = path.join(sketchDir, 'sketch.ino');
@@ -27,8 +28,10 @@ class ArduinoCLIService {
 
       await fs.mkdir(sketchDir, { recursive: true });
       await fs.mkdir(buildDir, { recursive: true });
-      await fs.writeFile(sketchFile, code, 'utf-8');
 
+      // Decode HTML entities to proper C++/Arduino syntax
+      const decodedCode = he.decode(code);
+      await fs.writeFile(sketchFile, decodedCode, 'utf-8');
       logger.info(`Created sketch: ${sketchFile}`);
 
       const fqbn = this.getBoardFQBN(board.id);
@@ -71,7 +74,7 @@ class ArduinoCLIService {
       // Store firmware
       const storageDir = await this.storeFirmware({
         compilationId,
-        code,
+        code: decodedCode,
         board,
         buildDir,
         firmwarePath,
@@ -102,115 +105,6 @@ class ArduinoCLIService {
         details: error.stderr || error.stdout || error.stack
       };
     }
-  }
-
-  /**
-   * Get Board FQBN
-   */
-  getBoardFQBN(boardId) {
-    const fqbnMap = {
-      'arduino_uno': 'arduino:avr:uno',
-      'arduino_mega': 'arduino:avr:mega:cpu=atmega2560',
-      'arduino_nano': 'arduino:avr:nano:cpu=atmega328',
-      'esp32_devkit_v1': 'esp32:esp32:esp32',
-      'stm32_bluepill': 'STMicroelectronics:stm32:GenF1:pnum=BLUEPILL_F103C8'
-    };
-
-    const fqbn = fqbnMap[boardId];
-    if (!fqbn) throw new Error(`Unknown board ID: ${boardId}`);
-    return fqbn;
-  }
-
-  /**
-   * Execute command with proper error handling
-   */
-  executeCommand(command, args) {
-    return new Promise((resolve, reject) => {
-      const proc = spawn(command, args, { shell: true, cwd: config.paths.temp, env: process.env });
-
-      let stdout = '';
-      let stderr = '';
-
-      proc.stdout.on('data', data => { stdout += data.toString(); });
-      proc.stderr.on('data', data => { stderr += data.toString(); });
-
-      proc.on('close', code => {
-        if (code === 0) resolve({ stdout, stderr, code });
-        else {
-          const error = new Error(`Command failed with exit code ${code}`);
-          error.stdout = stdout;
-          error.stderr = stderr;
-          error.code = code;
-          reject(error);
-        }
-      });
-
-      proc.on('error', err => { err.stdout = stdout; err.stderr = stderr; reject(err); });
-
-      setTimeout(() => {
-        proc.kill();
-        const error = new Error('Compilation timeout (120s)');
-        error.stdout = stdout;
-        error.stderr = stderr;
-        reject(error);
-      }, 120000);
-    });
-  }
-
-  /**
-   * Parse memory usage from Arduino CLI output
-   */
-  parseMemoryUsage(output, board) {
-    const flashMatch = output.match(/Sketch uses (\d+) bytes \((\d+)%\) of program storage/);
-    const ramMatch = output.match(/Global variables use (\d+) bytes \((\d+)%\)/);
-
-    return {
-      flash: {
-        used: flashMatch ? parseInt(flashMatch[1]) : 0,
-        total: board.specs.flash,
-        percentage: flashMatch ? parseFloat(flashMatch[2]).toFixed(1) : 0
-      },
-      ram: {
-        used: ramMatch ? parseInt(ramMatch[1]) : 0,
-        total: board.specs.sram,
-        percentage: ramMatch ? parseFloat(ramMatch[2]).toFixed(1) : 0
-      }
-    };
-  }
-
-  /**
-   * Parse warnings from compiler output
-   */
-  parseWarnings(stderr) {
-    return stderr.split('\n').filter(line => line.includes('warning:')).map(line => line.trim());
-  }
-
-  /**
-   * Store firmware in executables directory
-   */
-  async storeFirmware({ compilationId, code, board, buildDir, firmwarePath, firmwareFile }) {
-    const timestamp = new Date().toISOString().replace(/:/g, '-');
-    const codeHash = crypto.createHash('sha256').update(code).digest('hex').substring(0, 8);
-
-    const storageDir = path.join(config.paths.firmware, `${timestamp}-${board.id}-${codeHash}`);
-    await fs.mkdir(storageDir, { recursive: true });
-
-    const ext = board.architecture === 'esp32' ? 'bin' : 'hex';
-    await fs.copyFile(firmwarePath, path.join(storageDir, `firmware.${ext}`));
-    await fs.writeFile(path.join(storageDir, 'source.ino'), code);
-
-    const metadata = {
-      compilationId,
-      timestamp: new Date().toISOString(),
-      board: { id: board.id, name: board.name, architecture: board.architecture },
-      firmware: { format: ext, file: firmwareFile },
-      source: { hash: codeHash, lines: code.split('\n').length },
-      method: 'arduino-cli'
-    };
-
-    await fs.writeFile(path.join(storageDir, 'metadata.json'), JSON.stringify(metadata, null, 2));
-    logger.info(`Firmware stored at ${storageDir}`);
-    return storageDir;
   }
 
   /**
@@ -264,19 +158,103 @@ class ArduinoCLIService {
   }
 
   /**
-   * Get available libraries
+   * Get Board FQBN
    */
-  async getAvailableLibraries(architecture) {
-    try {
-      const result = await this.executeCommand(this.cliPath, ['lib', 'list', '--format', 'json']);
-      const libraries = JSON.parse(result.stdout);
-      return libraries
-        .filter(lib => !lib.architectures || lib.architectures.includes(architecture) || lib.architectures.includes('*'))
-        .map(lib => ({ name: lib.name, version: lib.latest, folder: lib.name, architectures: lib.architectures || ['*'] }));
-    } catch (error) {
-      logger.error('Failed to get libraries:', error);
-      return [];
-    }
+  getBoardFQBN(boardId) {
+    const fqbnMap = {
+      'arduino_uno': 'arduino:avr:uno',
+      'arduino_mega': 'arduino:avr:mega:cpu=atmega2560',
+      'arduino_nano': 'arduino:avr:nano:cpu=atmega328',
+      'esp32_devkit_v1': 'esp32:esp32:esp32',
+      'stm32_bluepill': 'STMicroelectronics:stm32:GenF1:pnum=BLUEPILL_F103C8'
+    };
+
+    const fqbn = fqbnMap[boardId];
+    if (!fqbn) throw new Error(`Unknown board ID: ${boardId}`);
+    return fqbn;
+  }
+
+  /**
+   * Execute command with proper error handling
+   */
+  executeCommand(command, args) {
+    return new Promise((resolve, reject) => {
+      const proc = spawn(command, args, { shell: true, cwd: config.paths.temp, env: process.env });
+
+      let stdout = '';
+      let stderr = '';
+
+      proc.stdout.on('data', data => { stdout += data.toString(); });
+      proc.stderr.on('data', data => { stderr += data.toString(); });
+
+      proc.on('close', code => {
+        if (code === 0) resolve({ stdout, stderr, code });
+        else {
+          const error = new Error(`Command failed with exit code ${code}`);
+          error.stdout = stdout;
+          error.stderr = stderr;
+          error.code = code;
+          reject(error);
+        }
+      });
+
+      proc.on('error', err => { err.stdout = stdout; err.stderr = stderr; reject(err); });
+
+      setTimeout(() => {
+        proc.kill();
+        const error = new Error('Command timeout (120s)');
+        error.stdout = stdout;
+        error.stderr = stderr;
+        reject(error);
+      }, 120000);
+    });
+  }
+
+  parseMemoryUsage(output, board) {
+    const flashMatch = output.match(/Sketch uses (\d+) bytes \((\d+)%\) of program storage/);
+    const ramMatch = output.match(/Global variables use (\d+) bytes \((\d+)%\)/);
+
+    return {
+      flash: {
+        used: flashMatch ? parseInt(flashMatch[1]) : 0,
+        total: board.specs.flash,
+        percentage: flashMatch ? parseFloat(flashMatch[2]).toFixed(1) : 0
+      },
+      ram: {
+        used: ramMatch ? parseInt(ramMatch[1]) : 0,
+        total: board.specs.sram,
+        percentage: ramMatch ? parseFloat(ramMatch[2]).toFixed(1) : 0
+      }
+    };
+  }
+
+  parseWarnings(stderr) {
+    return stderr.split('\n').filter(line => line.includes('warning:')).map(line => line.trim());
+  }
+
+  async storeFirmware({ compilationId, code, board, buildDir, firmwarePath, firmwareFile }) {
+    const timestamp = new Date().toISOString().replace(/:/g, '-');
+    const codeHash = crypto.createHash('sha256').update(code).digest('hex').substring(0, 8);
+
+    const storageDir = path.join(config.paths.firmware, `${timestamp}-${board.id}-${codeHash}`);
+    await fs.mkdir(storageDir, { recursive: true });
+
+    const ext = board.architecture === 'esp32' ? 'bin' : 'hex';
+    await fs.copyFile(firmwarePath, path.join(storageDir, `firmware.${ext}`));
+    await fs.writeFile(path.join(storageDir, 'source.ino'), code);
+
+    const metadata = {
+      compilationId,
+      timestamp: new Date().toISOString(),
+      board: { id: board.id, name: board.name, architecture: board.architecture },
+      firmware: { format: ext, file: firmwareFile },
+      source: { hash: codeHash, lines: code.split('\n').length },
+      method: 'arduino-cli'
+    };
+
+    await fs.writeFile(path.join(storageDir, 'metadata.json'), JSON.stringify(metadata, null, 2));
+    logger.info(`Firmware stored at ${storageDir}`);
+    return storageDir;
   }
 }
 
