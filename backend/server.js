@@ -4,6 +4,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const WebSocket = require('ws');
 const path = require('path');
+const fs = require('fs');
 const config = require('./src/config/config');
 const logger = require('./src/utils/logger.util');
 
@@ -22,11 +23,27 @@ const serialSocket = require('./src/websockets/serial.socket');
 const securityMiddleware = require('./src/middleware/security.middleware');
 const rateLimiter = require('./src/middleware/rate-limiter.middleware');
 
+// Temp file cleaner
+const cleanTempFiles = require('./src/utils/cleanTempFiles');
+const TEMP_DIR = path.join(__dirname, 'temp');
+const FIRMWARE_DIR = path.join(__dirname, 'executables', 'firmware');
+
+// --- Ensure required folders exist ---
+[TEMP_DIR, FIRMWARE_DIR].forEach(dir => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+    console.log(`Created folder: ${dir}`);
+  }
+});
+
+// --- Clean temp files from previous runs ---
+cleanTempFiles(TEMP_DIR);
+
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server, path: '/ws' });
 
-// Middleware setup
+// --- Middleware setup ---
 app.use(helmet());
 app.use(cors(config.corsOptions));
 app.use(express.json({ limit: '10mb' }));
@@ -34,14 +51,14 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(securityMiddleware.sanitizeInput);
 app.use(rateLimiter.globalLimiter);
 
-// API Routes
+// --- API Routes ---
 app.use('/api/compiler', compilerRoutes);
 app.use('/api/executables', executablesRoutes);
 app.use('/api/embedded', embeddedRoutes);
 app.use('/api/devices', devicesRoutes);
 app.use('/api/serial', serialRoutes);
 
-// Health check
+// --- Health check ---
 app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'ok', 
@@ -54,10 +71,9 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// WebSocket connection handling
+// --- WebSocket connection handling ---
 wss.on('connection', (ws, req) => {
   const urlPath = req.url;
-  
   if (urlPath.startsWith('/ws/compile')) {
     compileSocket.handleConnection(ws, req);
   } else if (urlPath.startsWith('/ws/serial')) {
@@ -67,7 +83,7 @@ wss.on('connection', (ws, req) => {
   }
 });
 
-// Error handling
+// --- Error handling ---
 app.use((err, req, res, next) => {
   logger.error('Unhandled error:', err);
   res.status(err.status || 500).json({
@@ -76,20 +92,29 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Start server
+// --- Start server ---
 server.listen(config.port, () => {
   logger.info(`Server running on port ${config.port}`);
   logger.info(`Environment: ${config.env}`);
   logger.info(`WebSocket endpoint: ws://localhost:${config.port}/ws`);
 });
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  logger.info('SIGTERM received, shutting down gracefully');
+// --- Graceful shutdown ---
+const shutdown = () => {
+  logger.info('Cleaning temp files and shutting down...');
+  cleanTempFiles(TEMP_DIR);
+
   server.close(() => {
     logger.info('Server closed');
     process.exit(0);
   });
+};
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
+process.on('uncaughtException', (err) => {
+  logger.error('Uncaught Exception:', err);
+  shutdown();
 });
 
 module.exports = { app, server, wss };
