@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Terminal as TerminalIcon, Trash2 } from 'lucide-react';
 
+
 const Terminal = ({ output, onClear }) => {
   const terminalRef = useRef(null);
 
