@@ -1,3 +1,4 @@
+
 const { spawn } = require('child_process');
 const fs = require('fs').promises;
 const path = require('path');
@@ -20,7 +21,7 @@ class ArduinoCLIService {
     try {
       logger.info(`Arduino CLI Compilation ${compilationId}: Starting for ${board.name}`);
 
-      // Create sketch directory structure
+      // Create sketch folder structure
       const baseDir = path.join(config.paths.temp, `compile-${compilationId}`);
       const sketchDir = path.join(baseDir, 'sketch');
       const sketchFile = path.join(sketchDir, 'sketch.ino');
@@ -29,15 +30,16 @@ class ArduinoCLIService {
       await fs.mkdir(sketchDir, { recursive: true });
       await fs.mkdir(buildDir, { recursive: true });
 
-      // Decode HTML entities to proper C++/Arduino syntax
+      // Decode HTML entities in code before writing
       const decodedCode = he.decode(code);
       await fs.writeFile(sketchFile, decodedCode, 'utf-8');
-      logger.info(`Created sketch: ${sketchFile}`);
+      logger.info(`Sketch file created: ${sketchFile}`);
 
+      // Get FQBN
       const fqbn = this.getBoardFQBN(board.id);
       logger.info(`Using FQBN: ${fqbn}`);
 
-      // Compile using Arduino CLI
+      // Compile with Arduino CLI
       const compileArgs = [
         'compile',
         '--fqbn', fqbn,
@@ -47,26 +49,25 @@ class ArduinoCLIService {
       ];
 
       logger.info(`Executing: arduino-cli ${compileArgs.join(' ')}`);
+
       const result = await this.executeCommand(this.cliPath, compileArgs);
 
       logger.info('Compilation completed successfully');
 
-      // Find generated firmware file
-      let firmwareFile;
-      if (board.architecture === 'esp32') {
-        firmwareFile = (await fs.readdir(buildDir)).find(f => f.endsWith('.bin'));
-      } else {
-        firmwareFile = (await fs.readdir(buildDir)).find(f => f.endsWith('.hex'));
+      // Find firmware files (architecture-specific)
+      const files = await fs.readdir(buildDir);
+      const firmwareData = await this.findFirmwareFiles(buildDir, files, board);
+
+      if (!firmwareData.mainFirmware) {
+        logger.error('Available files in build directory:', files);
+        throw new Error(`Firmware file not found for ${board.architecture} architecture`);
       }
 
-      if (!firmwareFile) {
-        throw new Error(`${board.architecture === 'esp32' ? 'Bin' : 'Hex'} file not generated after compilation`);
-      }
+      const firmwareStats = await fs.stat(firmwareData.mainFirmware);
 
-      const firmwarePath = path.join(buildDir, firmwareFile);
-      const firmwareStats = await fs.stat(firmwarePath);
-
+      // Parse memory usage
       const memoryUsage = this.parseMemoryUsage(result.stdout + result.stderr, board);
+
       const buildTime = Date.now() - startTime;
 
       logger.info(`Compilation ${compilationId}: Success in ${buildTime}ms`);
@@ -77,8 +78,8 @@ class ArduinoCLIService {
         code: decodedCode,
         board,
         buildDir,
-        firmwarePath,
-        firmwareFile
+        firmwareData,
+        files
       });
 
       return {
@@ -92,8 +93,9 @@ class ArduinoCLIService {
           board: board.id,
           architecture: board.architecture,
           timestamp: new Date().toISOString(),
-          firmwareFile: firmwarePath,
-          firmwareSize: firmwareStats.size
+          firmwareFile: firmwareData.mainFirmware,
+          firmwareSize: firmwareStats.size,
+          buildDir: buildDir
         }
       };
 
@@ -108,6 +110,37 @@ class ArduinoCLIService {
   }
 
   /**
+   * Find firmware files based on architecture
+   */
+  async findFirmwareFiles(buildDir, files, board) {
+    const firmwareData = {
+      mainFirmware: null,
+      bootloader: null,
+      partitions: null,
+      bootApp: null
+    };
+
+    if (board.architecture === 'avr') {
+      const hexFile = files.find(f => f.endsWith('.hex') && !f.includes('with_bootloader'));
+      if (hexFile) firmwareData.mainFirmware = path.join(buildDir, hexFile);
+    } else if (board.architecture === 'esp32') {
+      const mergedBin = files.find(f => f.includes('.merged.bin'));
+      const sketchBin = files.find(f => f === 'sketch.ino.bin');
+      firmwareData.mainFirmware = mergedBin ? path.join(buildDir, mergedBin) : (sketchBin ? path.join(buildDir, sketchBin) : null);
+      const bootloaderBin = files.find(f => f.includes('.bootloader.bin'));
+      if (bootloaderBin) firmwareData.bootloader = path.join(buildDir, bootloaderBin);
+      const partitionsBin = files.find(f => f.includes('.partitions.bin'));
+      if (partitionsBin) firmwareData.partitions = path.join(buildDir, partitionsBin);
+    } else if (board.architecture === 'stm32') {
+      const binFile = files.find(f => f.endsWith('.bin'));
+      const hexFile = files.find(f => f.endsWith('.hex'));
+      firmwareData.mainFirmware = binFile ? path.join(buildDir, binFile) : (hexFile ? path.join(buildDir, hexFile) : null);
+    }
+
+    return firmwareData;
+  }
+
+  /**
    * Upload firmware to board
    */
   async upload({ uploadId, firmwarePath, board, port, options }) {
@@ -116,25 +149,34 @@ class ArduinoCLIService {
     try {
       logger.info(`Upload ${uploadId}: Starting to ${board.name} on ${port}`);
 
+      const metadataPath = path.join(firmwarePath, 'metadata.json');
+      let buildDir = firmwarePath;
+      try {
+        const metadata = JSON.parse(await fs.readFile(metadataPath, 'utf-8'));
+        if (metadata.buildDir) buildDir = metadata.buildDir;
+      } catch (error) {
+        logger.warn('Could not read metadata, using firmware path as build dir');
+      }
+
+      if (board.architecture === 'esp32') return await this.uploadESP32WithCLI(uploadId, buildDir, board, port);
+
       const files = await fs.readdir(firmwarePath);
-      const firmwareFile = board.architecture === 'esp32'
-        ? files.find(f => f.endsWith('.bin'))
-        : files.find(f => f.endsWith('.hex'));
+      const hexFile = files.find(f => f.endsWith('.hex'));
+      if (!hexFile) throw new Error('Hex file not found in firmware directory');
 
-      if (!firmwareFile) throw new Error('Firmware file not found in firmware directory');
-
-      const firmwareFullPath = path.join(firmwarePath, firmwareFile);
+      const hexPath = path.join(firmwarePath, hexFile);
       const fqbn = this.getBoardFQBN(board.id);
 
       const uploadArgs = [
         'upload',
         '--fqbn', fqbn,
         '--port', port,
-        '--input-file', firmwareFullPath,
+        '--input-file', hexPath,
         '--verbose'
       ];
 
       logger.info(`Executing: arduino-cli ${uploadArgs.join(' ')}`);
+
       await this.executeCommand(this.cliPath, uploadArgs);
 
       const duration = Date.now() - startTime;
@@ -143,7 +185,7 @@ class ArduinoCLIService {
       return {
         success: true,
         duration,
-        bytesWritten: (await fs.stat(firmwareFullPath)).size,
+        bytesWritten: (await fs.stat(hexPath)).size,
         verified: true
       };
 
@@ -154,6 +196,44 @@ class ArduinoCLIService {
         stage: 'upload',
         details: error.stderr || error.stdout || error.stack
       };
+    }
+  }
+
+  /**
+   * Upload ESP32 using Arduino CLI (handles partitions automatically)
+   */
+  async uploadESP32WithCLI(uploadId, buildDir, board, port) {
+    const startTime = Date.now();
+
+    try {
+      logger.info(`ESP32 Upload: Using Arduino CLI to upload from ${buildDir}`);
+
+      const sketchDir = path.dirname(buildDir);
+      const fqbn = this.getBoardFQBN(board.id);
+
+      const uploadArgs = [
+        'upload',
+        '--fqbn', fqbn,
+        '--port', port,
+        '--input-dir', buildDir,
+        '--verbose'
+      ];
+
+      logger.info(`Executing: arduino-cli ${uploadArgs.join(' ')}`);
+      await this.executeCommand(this.cliPath, uploadArgs);
+
+      const duration = Date.now() - startTime;
+
+      const files = await fs.readdir(buildDir);
+      const mainBin = files.find(f => f.includes('.merged.bin') || f === 'sketch.ino.bin');
+      const firmwareSize = mainBin ? (await fs.stat(path.join(buildDir, mainBin))).size : 0;
+
+      logger.info(`ESP32 Upload ${uploadId}: Success in ${duration}ms`);
+      return { success: true, duration, bytesWritten: firmwareSize, verified: true };
+
+    } catch (error) {
+      logger.error(`ESP32 Upload failed:`, error);
+      throw error;
     }
   }
 
@@ -175,7 +255,7 @@ class ArduinoCLIService {
   }
 
   /**
-   * Execute command with proper error handling
+   * Execute command
    */
   executeCommand(command, args) {
     return new Promise((resolve, reject) => {
@@ -184,10 +264,10 @@ class ArduinoCLIService {
       let stdout = '';
       let stderr = '';
 
-      proc.stdout.on('data', data => { stdout += data.toString(); });
-      proc.stderr.on('data', data => { stderr += data.toString(); });
+      proc.stdout.on('data', (data) => stdout += data.toString());
+      proc.stderr.on('data', (data) => stderr += data.toString());
 
-      proc.on('close', code => {
+      proc.on('close', (code) => {
         if (code === 0) resolve({ stdout, stderr, code });
         else {
           const error = new Error(`Command failed with exit code ${code}`);
@@ -198,7 +278,7 @@ class ArduinoCLIService {
         }
       });
 
-      proc.on('error', err => { err.stdout = stdout; err.stderr = stderr; reject(err); });
+      proc.on('error', (err) => { err.stdout = stdout; err.stderr = stderr; reject(err); });
 
       setTimeout(() => {
         proc.kill();
@@ -210,51 +290,90 @@ class ArduinoCLIService {
     });
   }
 
+  /**
+   * Parse memory usage
+   */
   parseMemoryUsage(output, board) {
     const flashMatch = output.match(/Sketch uses (\d+) bytes \((\d+)%\) of program storage/);
     const ramMatch = output.match(/Global variables use (\d+) bytes \((\d+)%\)/);
 
+    const flashUsed = flashMatch ? parseInt(flashMatch[1]) : 0;
+    const flashPercent = flashMatch ? parseFloat(flashMatch[2]) : 0;
+    const ramUsed = ramMatch ? parseInt(ramMatch[1]) : 0;
+    const ramPercent = ramMatch ? parseFloat(ramMatch[2]) : 0;
+
     return {
-      flash: {
-        used: flashMatch ? parseInt(flashMatch[1]) : 0,
-        total: board.specs.flash,
-        percentage: flashMatch ? parseFloat(flashMatch[2]).toFixed(1) : 0
-      },
-      ram: {
-        used: ramMatch ? parseInt(ramMatch[1]) : 0,
-        total: board.specs.sram,
-        percentage: ramMatch ? parseFloat(ramMatch[2]).toFixed(1) : 0
-      }
+      flash: { used: flashUsed, total: board.specs.flash, percentage: flashPercent.toFixed(1) },
+      ram: { used: ramUsed, total: board.specs.sram, percentage: ramPercent.toFixed(1) }
     };
   }
 
+  /**
+   * Parse warnings
+   */
   parseWarnings(stderr) {
-    return stderr.split('\n').filter(line => line.includes('warning:')).map(line => line.trim());
+    const warnings = [];
+    const lines = stderr.split('\n');
+    for (const line of lines) if (line.includes('warning:')) warnings.push(line.trim());
+    return warnings;
   }
 
-  async storeFirmware({ compilationId, code, board, buildDir, firmwarePath, firmwareFile }) {
+  /**
+   * Store firmware
+   */
+  async storeFirmware({ compilationId, code, board, buildDir, firmwareData, files }) {
     const timestamp = new Date().toISOString().replace(/:/g, '-');
     const codeHash = crypto.createHash('sha256').update(code).digest('hex').substring(0, 8);
-
     const storageDir = path.join(config.paths.firmware, `${timestamp}-${board.id}-${codeHash}`);
     await fs.mkdir(storageDir, { recursive: true });
 
-    const ext = board.architecture === 'esp32' ? 'bin' : 'hex';
-    await fs.copyFile(firmwarePath, path.join(storageDir, `firmware.${ext}`));
+    if (board.architecture === 'avr') {
+      if (firmwareData.mainFirmware) await fs.copyFile(firmwareData.mainFirmware, path.join(storageDir, path.basename(firmwareData.mainFirmware)));
+    } else if (board.architecture === 'esp32') {
+      for (const file of files) if (file.endsWith('.bin') || file.endsWith('.elf') || file.endsWith('.map')) await fs.copyFile(path.join(buildDir, file), path.join(storageDir, file));
+    } else if (board.architecture === 'stm32') {
+      if (firmwareData.mainFirmware) await fs.copyFile(firmwareData.mainFirmware, path.join(storageDir, path.basename(firmwareData.mainFirmware)));
+    }
+
     await fs.writeFile(path.join(storageDir, 'source.ino'), code);
 
     const metadata = {
       compilationId,
       timestamp: new Date().toISOString(),
       board: { id: board.id, name: board.name, architecture: board.architecture },
-      firmware: { format: ext, file: firmwareFile },
+      firmware: { format: board.architecture === 'avr' ? 'hex' : 'bin', files: files.filter(f => f.endsWith('.bin') || f.endsWith('.hex')) },
       source: { hash: codeHash, lines: code.split('\n').length },
-      method: 'arduino-cli'
+      method: 'arduino-cli',
+      buildDir: buildDir
     };
 
     await fs.writeFile(path.join(storageDir, 'metadata.json'), JSON.stringify(metadata, null, 2));
     logger.info(`Firmware stored at ${storageDir}`);
     return storageDir;
+  }
+
+  /**
+   * Get available libraries
+   */
+  async getAvailableLibraries(architecture) {
+    try {
+      const result = await this.executeCommand(this.cliPath, ['lib', 'list', '--format', 'json']);
+      let libraries = [];
+      try { libraries = JSON.parse(result.stdout); } catch (error) { logger.warn('Failed to parse library list JSON'); return []; }
+      return libraries.filter(lib => {
+        if (!lib.library) return false;
+        const architectures = lib.library.architectures || ['*'];
+        return architectures.includes(architecture) || architectures.includes('*');
+      }).map(lib => ({
+        name: lib.library.name,
+        version: lib.library.version,
+        folder: lib.library.name,
+        architectures: lib.library.architectures || ['*']
+      }));
+    } catch (error) {
+      logger.error('Failed to get libraries:', error);
+      return [];
+    }
   }
 }
 
