@@ -1,35 +1,36 @@
-const express = require('express');
-const http = require('http');
-const cors = require('cors');
-const helmet = require('helmet');
-const WebSocket = require('ws');
-const path = require('path');
-const fs = require('fs');
-const config = require('./src/config/config');
-const logger = require('./src/utils/logger.util');
+const express = require("express");
+const http = require("http");
+const cors = require("cors");
+const helmet = require("helmet");
+const WebSocket = require("ws");
+const path = require("path");
+const fs = require("fs");
+const config = require("./src/config/config");
+const logger = require("./src/utils/logger.util");
 
 // Routes
-const compilerRoutes = require('./src/routes/compiler.routes');
-const executablesRoutes = require('./src/routes/executables.routes');
-const embeddedRoutes = require('./src/routes/embedded.routes');
-const devicesRoutes = require('./src/routes/devices.routes');
-const serialRoutes = require('./src/routes/serial.routes');
+const compilerRoutes = require("./src/routes/compiler.routes");
+const executablesRoutes = require("./src/routes/executables.routes");
+const embeddedRoutes = require("./src/routes/embedded.routes");
+const devicesRoutes = require("./src/routes/devices.routes");
+const serialRoutes = require("./src/routes/serial.routes");
+const chatbotRoutes = require("./src/routes/chatbot.routes");
 
 // WebSocket handlers
-const compileSocket = require('./src/websockets/compile.socket');
-const serialSocket = require('./src/websockets/serial.socket');
+const compileSocket = require("./src/websockets/compile.socket");
+const serialSocket = require("./src/websockets/serial.socket");
 
 // Middleware
-const securityMiddleware = require('./src/middleware/security.middleware');
-const rateLimiter = require('./src/middleware/rate-limiter.middleware');
+const securityMiddleware = require("./src/middleware/security.middleware");
+const rateLimiter = require("./src/middleware/rate-limiter.middleware");
 
 // Temp file cleaner
-const cleanTempFiles = require('./src/utils/cleanTempFiles');
-const TEMP_DIR = path.join(__dirname, 'temp');
-const FIRMWARE_DIR = path.join(__dirname, 'executables', 'firmware');
+const cleanTempFiles = require("./src/utils/cleanTempFiles");
+const TEMP_DIR = path.join(__dirname, "temp");
+const FIRMWARE_DIR = path.join(__dirname, "executables", "firmware");
 
 // --- Ensure required folders exist ---
-[TEMP_DIR, FIRMWARE_DIR].forEach(dir => {
+[TEMP_DIR, FIRMWARE_DIR].forEach((dir) => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
     console.log(`Created folder: ${dir}`);
@@ -41,54 +42,55 @@ cleanTempFiles(TEMP_DIR);
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server, path: '/ws' });
+const wss = new WebSocket.Server({ server, path: "/ws" });
 
 // --- Middleware setup ---
 app.use(helmet());
 app.use(cors(config.corsOptions));
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(securityMiddleware.sanitizeInput);
 app.use(rateLimiter.globalLimiter);
 
 // --- API Routes ---
-app.use('/api/compiler', compilerRoutes);
-app.use('/api/executables', executablesRoutes);
-app.use('/api/embedded', embeddedRoutes);
-app.use('/api/devices', devicesRoutes);
-app.use('/api/serial', serialRoutes);
+app.use("/api/compiler", compilerRoutes);
+app.use("/api/executables", executablesRoutes);
+app.use("/api/embedded", embeddedRoutes);
+app.use("/api/devices", devicesRoutes);
+app.use("/api/serial", serialRoutes);
+app.use("/api/chatbot", chatbotRoutes);
 
 // --- Health check ---
-app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
+app.get("/api/health", (req, res) => {
+  res.json({
+    status: "ok",
     timestamp: new Date().toISOString(),
     services: {
-      compiler: 'ready',
-      embedded: 'ready',
-      devices: 'ready'
-    }
+      compiler: "ready",
+      embedded: "ready",
+      devices: "ready",
+    },
   });
 });
 
 // --- WebSocket connection handling ---
-wss.on('connection', (ws, req) => {
+wss.on("connection", (ws, req) => {
   const urlPath = req.url;
-  if (urlPath.startsWith('/ws/compile')) {
+  if (urlPath.startsWith("/ws/compile")) {
     compileSocket.handleConnection(ws, req);
-  } else if (urlPath.startsWith('/ws/serial')) {
+  } else if (urlPath.startsWith("/ws/serial")) {
     serialSocket.handleConnection(ws, req);
   } else {
-    ws.close(1008, 'Unknown WebSocket path');
+    ws.close(1008, "Unknown WebSocket path");
   }
 });
 
 // --- Error handling ---
 app.use((err, req, res, next) => {
-  logger.error('Unhandled error:', err);
+  logger.error("Unhandled error:", err);
   res.status(err.status || 500).json({
-    error: err.message || 'Internal server error',
-    ...(config.env === 'development' && { stack: err.stack })
+    error: err.message || "Internal server error",
+    ...(config.env === "development" && { stack: err.stack }),
   });
 });
 
@@ -101,19 +103,19 @@ server.listen(config.port, () => {
 
 // --- Graceful shutdown ---
 const shutdown = () => {
-  logger.info('Cleaning temp files and shutting down...');
+  logger.info("Cleaning temp files and shutting down...");
   cleanTempFiles(TEMP_DIR);
 
   server.close(() => {
-    logger.info('Server closed');
+    logger.info("Server closed");
     process.exit(0);
   });
 };
 
-process.on('SIGTERM', shutdown);
-process.on('SIGINT', shutdown);
-process.on('uncaughtException', (err) => {
-  logger.error('Uncaught Exception:', err);
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);
+process.on("uncaughtException", (err) => {
+  logger.error("Uncaught Exception:", err);
   shutdown();
 });
 

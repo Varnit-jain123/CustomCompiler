@@ -1,13 +1,14 @@
-import axios from 'axios';
+import axios from "axios";
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+const API_BASE_URL =
+  process.env.REACT_APP_API_URL || "http://localhost:5000/api";
 
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
-    'Content-Type': 'application/json'
+    "Content-Type": "application/json",
   },
-  timeout: 120000 // 2 minutes
+  timeout: 120000, // 2 minutes
 });
 
 // Request interceptor
@@ -27,35 +28,42 @@ api.interceptors.response.use(
     return response;
   },
   (error) => {
-    console.error('API Error:', error.response?.data || error.message);
+    console.error("API Error:", error.response?.data || error.message);
     return Promise.reject(error);
   }
 );
 
 export const apiService = {
   // Boards
-  getBoards: () => api.get('/embedded/boards'),
+  getBoards: () => api.get("/embedded/boards"),
   getBoardDetails: (boardId) => api.get(`/embedded/boards/${boardId}`),
-  getBoardLibraries: (boardId) => api.get(`/embedded/boards/${boardId}/libraries`),
+  getBoardLibraries: (boardId) =>
+    api.get(`/embedded/boards/${boardId}/libraries`),
 
   // Templates
-  getTemplates: (boardId) => api.get('/embedded/templates', { params: { boardId } }),
-  getTemplate: (templateId, boardId) => api.get(`/embedded/templates/${templateId}`, { params: { boardId } }),
+  getTemplates: (boardId) =>
+    api.get("/embedded/templates", { params: { boardId } }),
+  getTemplate: (templateId, boardId) =>
+    api.get(`/embedded/templates/${templateId}`, { params: { boardId } }),
 
   // Compilation
-  compile: (data) => api.post('/embedded/compile', data),
-  upload: (data) => api.post('/embedded/upload', data),
+  compile: (data) => api.post("/embedded/compile", data),
+  upload: (data) => api.post("/embedded/upload", data),
 
   // Devices
-  listDevices: () => api.get('/devices'),
+  listDevices: () => api.get("/devices"),
   getDeviceInfo: (port) => api.get(`/devices/${encodeURIComponent(port)}/info`),
-  refreshDevices: () => api.post('/devices/refresh'),
+  refreshDevices: () => api.post("/devices/refresh"),
 
   // Serial
-  connectSerial: (data) => api.post('/serial/connect', data),
-  disconnectSerial: (data) => api.post('/serial/disconnect', data),
-  sendSerialData: (data) => api.post('/serial/send', data),
-  getSerialStatus: (port) => api.get(`/serial/status/${encodeURIComponent(port)}`)
+  connectSerial: (data) => api.post("/serial/connect", data),
+  disconnectSerial: (data) => api.post("/serial/disconnect", data),
+  sendSerialData: (data) => api.post("/serial/send", data),
+  getSerialStatus: (port) =>
+    api.get(`/serial/status/${encodeURIComponent(port)}`),
+
+  //Chatbot
+  sendChatMessage: (chatData) => api.post("/chatbot/chat", chatData),
 };
 
 export default api;
