@@ -19,26 +19,39 @@
   flex-direction: column;
   gap: 12px;
 }
+.message-wrapper {
+  display: flex;
+  flex-direction: column;
+  max-width: 90%; /* Give button room */
+}
+.message-wrapper.user {
+  align-self: flex-end;
+}
+.message-wrapper.model {
+  align-self: flex-start;
+}
+/* END NEW */
 
 .message {
   padding: 10px 14px;
   border-radius: 16px;
-  max-width: 80%;
+  /* max-width: 80%; */ /* Moved to wrapper */
   word-wrap: break-word;
   background-color: #3a3a3a;
   color: #f1f1f1;
 }
 
 .message.user {
-  align-self: flex-end;
+  /* align-self: flex-end; */ /* Moved to wrapper */
   background-color: #007acc;
   color: white;
 }
 
 .message.model {
-  align-self: flex-start;
+  /* align-self: flex-start; */ /* Moved to wrapper */
   background-color: #2a2a2a;
   border: 1px solid #3c3c3c;
+  position: relative; /* For positioning button */
 }
 
 /* Using <pre> for code formatting */
@@ -98,6 +111,36 @@
 }
 .typing-indicator span:nth-child(3) {
   animation-delay: 0.4s;
+}
+
+/* --- NEW STYLES FOR COPY BUTTON --- */
+.copy-button {
+  align-self: flex-end; /* Position button to the right */
+  background-color: #3c3c3c;
+  color: #c0c0c0;
+  border: 1px solid #555;
+  border-radius: 4px;
+  padding: 4px 8px;
+  margin-top: 6px; /* Space between message and button */
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s ease;
+  max-width: 80px; /* Prevent button from being too wide */
+}
+
+.copy-button:hover {
+  background-color: #4a4a4a;
+  color: #fff;
+}
+
+.copy-button.copied {
+  background-color: #28a745; /* Green */
+  color: #fff;
+  border-color: #28a745;
+}
+
+.copy-button svg {
+  display: block; /* Fixes layout issue */
 }
 
 @keyframes bounce {
