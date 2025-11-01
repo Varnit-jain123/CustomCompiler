@@ -5,10 +5,15 @@ const helmet = require("helmet");
 const WebSocket = require("ws");
 const path = require("path");
 const fs = require("fs");
+
 const config = require("./src/config/config");
 const logger = require("./src/utils/logger.util");
+const cleanTempFiles = require("./src/utils/cleanTempFiles");
 
-// Routes
+// Services & Routes
+const otaService = require("./src/services/ota.service");
+const otaRoutes = require("./src/routes/ota.routes");
+
 const compilerRoutes = require("./src/routes/compiler.routes");
 const executablesRoutes = require("./src/routes/executables.routes");
 const embeddedRoutes = require("./src/routes/embedded.routes");
@@ -16,7 +21,7 @@ const devicesRoutes = require("./src/routes/devices.routes");
 const serialRoutes = require("./src/routes/serial.routes");
 const chatbotRoutes = require("./src/routes/chatbot.routes");
 
-// WebSocket handlers
+// WebSocket Handlers
 const compileSocket = require("./src/websockets/compile.socket");
 const serialSocket = require("./src/websockets/serial.socket");
 
@@ -24,27 +29,24 @@ const serialSocket = require("./src/websockets/serial.socket");
 const securityMiddleware = require("./src/middleware/security.middleware");
 const rateLimiter = require("./src/middleware/rate-limiter.middleware");
 
-// Temp file cleaner
-const cleanTempFiles = require("./src/utils/cleanTempFiles");
 const TEMP_DIR = path.join(__dirname, "temp");
 const FIRMWARE_DIR = path.join(__dirname, "executables", "firmware");
 
-// --- Ensure required folders exist ---
+// Ensure required folders exist
 [TEMP_DIR, FIRMWARE_DIR].forEach((dir) => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
-    console.log(`Created folder: ${dir}`);
+    logger.info(`Created folder: ${dir}`);
   }
 });
 
-// --- Clean temp files from previous runs ---
+// Clean up temp files from previous runs
 cleanTempFiles(TEMP_DIR);
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server, path: "/ws" });
 
-// --- Middleware setup ---
 app.use(helmet());
 app.use(cors(config.corsOptions));
 app.use(express.json({ limit: "10mb" }));
@@ -52,7 +54,7 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(securityMiddleware.sanitizeInput);
 app.use(rateLimiter.globalLimiter);
 
-// --- API Routes ---
+app.use("/api/ota", otaRoutes);
 app.use("/api/compiler", compilerRoutes);
 app.use("/api/executables", executablesRoutes);
 app.use("/api/embedded", embeddedRoutes);
@@ -60,7 +62,7 @@ app.use("/api/devices", devicesRoutes);
 app.use("/api/serial", serialRoutes);
 app.use("/api/chatbot", chatbotRoutes);
 
-// --- Health check ---
+// Health Check Route
 app.get("/api/health", (req, res) => {
   res.json({
     status: "ok",
@@ -73,9 +75,9 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// --- WebSocket connection handling ---
 wss.on("connection", (ws, req) => {
   const urlPath = req.url;
+
   if (urlPath.startsWith("/ws/compile")) {
     compileSocket.handleConnection(ws, req);
   } else if (urlPath.startsWith("/ws/serial")) {
@@ -85,7 +87,6 @@ wss.on("connection", (ws, req) => {
   }
 });
 
-// --- Error handling ---
 app.use((err, req, res, next) => {
   logger.error("Unhandled error:", err);
   res.status(err.status || 500).json({
@@ -94,17 +95,19 @@ app.use((err, req, res, next) => {
   });
 });
 
-// --- Start server ---
 server.listen(config.port, () => {
   logger.info(`Server running on port ${config.port}`);
   logger.info(`Environment: ${config.env}`);
   logger.info(`WebSocket endpoint: ws://localhost:${config.port}/ws`);
+
+  // Start OTA device discovery
+  otaService.startDiscovery();
 });
 
-// --- Graceful shutdown ---
 const shutdown = () => {
   logger.info("Cleaning temp files and shutting down...");
   cleanTempFiles(TEMP_DIR);
+  otaService.stopDiscovery();
 
   server.close(() => {
     logger.info("Server closed");

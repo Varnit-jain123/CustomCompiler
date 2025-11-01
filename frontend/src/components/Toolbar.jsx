@@ -1,18 +1,24 @@
 import React, { useState } from 'react';
-import { Play, Upload, Wifi, CheckCircle } from 'lucide-react';
+import { Upload, Wifi, CheckCircle} from 'lucide-react';
 import BoardSelector from './BoardSelector';
 import PortSelector from './PortSelector';
+import OTADeviceSelector from './OTADeviceSelector';
 
 const Toolbar = ({
   selectedBoard,
   onBoardSelect,
   selectedPort,
   onPortSelect,
+  selectedOTADevice,
+  onOTADeviceSelect,
   onVerify,
   onUpload,
+  onUploadOTA,
   onSerialMonitor,
   isCompiling,
-  isUploading
+  isUploading,
+  uploadMethod,
+  onUploadMethodChange
 }) => {
   const [showAdvanced, setShowAdvanced] = useState(false);
 
@@ -23,8 +29,12 @@ const Toolbar = ({
   };
 
   const handleUpload = () => {
-    if (!isCompiling && !isUploading && selectedBoard && selectedPort) {
-      onUpload();
+    if (!isCompiling && !isUploading && selectedBoard) {
+      if (uploadMethod === 'usb' && selectedPort) {
+        onUpload();
+      } else if (uploadMethod === 'ota' && selectedOTADevice) {
+        onUploadOTA();
+      }
     }
   };
 
@@ -34,6 +44,8 @@ const Toolbar = ({
     }
   };
 
+  const isESP = selectedBoard && (selectedBoard.includes('esp32') || selectedBoard.includes('esp8266'));
+
   return (
     <div className="toolbar">
       <div className="toolbar-section">
@@ -41,11 +53,45 @@ const Toolbar = ({
           selectedBoard={selectedBoard}
           onSelect={onBoardSelect}
         />
-        <PortSelector
-          selectedPort={selectedPort}
-          onSelect={onPortSelect}
-          disabled={isUploading}
-        />
+
+        {/* Upload Method Selector (only for ESP boards) */}
+        {isESP && (
+          <div className="upload-method-selector">
+            <label>
+              <input
+                type="radio"
+                value="usb"
+                checked={uploadMethod === 'usb'}
+                onChange={(e) => onUploadMethodChange(e.target.value)}
+              />
+              USB
+            </label>
+            <label>
+              <input
+                type="radio"
+                value="ota"
+                checked={uploadMethod === 'ota'}
+                onChange={(e) => onUploadMethodChange(e.target.value)}
+              />
+              OTA (WiFi)
+            </label>
+          </div>
+        )}
+
+        {/* Show appropriate selector based on upload method */}
+        {uploadMethod === 'usb' ? (
+          <PortSelector
+            selectedPort={selectedPort}
+            onSelect={onPortSelect}
+            disabled={isUploading}
+          />
+        ) : (
+          <OTADeviceSelector
+            selectedDevice={selectedOTADevice}
+            onSelect={onOTADeviceSelect}
+            disabled={isUploading}
+          />
+        )}
       </div>
 
       <div className="toolbar-section actions">
@@ -62,22 +108,30 @@ const Toolbar = ({
         <button
           className="toolbar-btn upload"
           onClick={handleUpload}
-          disabled={isCompiling || isUploading || !selectedBoard || !selectedPort}
-          title="Compile and upload to board"
+          disabled={
+            isCompiling || 
+            isUploading || 
+            !selectedBoard || 
+            (uploadMethod === 'usb' && !selectedPort) ||
+            (uploadMethod === 'ota' && !selectedOTADevice)
+          }
+          title={uploadMethod === 'ota' ? 'Compile and upload via WiFi' : 'Compile and upload via USB'}
         >
-          <Upload size={16} />
-          <span>{isUploading ? 'Uploading...' : 'Upload'}</span>
+          {uploadMethod === 'ota' ? <Wifi size={16} /> : <Upload size={16} />}
+          <span>{isUploading ? 'Uploading...' : `Upload (${uploadMethod.toUpperCase()})`}</span>
         </button>
 
-        <button
-          className="toolbar-btn serial"
-          onClick={handleSerialMonitor}
-          disabled={!selectedPort || isUploading}
-          title="Open Serial Monitor"
-        >
-          <Wifi size={16} />
-          <span>Serial Monitor</span>
-        </button>
+        {uploadMethod === 'usb' && (
+          <button
+            className="toolbar-btn serial"
+            onClick={handleSerialMonitor}
+            disabled={!selectedPort || isUploading}
+            title="Open Serial Monitor"
+          >
+            <Wifi size={16} />
+            <span>Serial Monitor</span>
+          </button>
+        )}
       </div>
 
       <div className="toolbar-section">
@@ -104,6 +158,12 @@ const Toolbar = ({
             <input type="checkbox" />
             Debug symbols
           </label>
+          {uploadMethod === 'ota' && (
+            <label>
+              OTA Password:
+              <input type="password" placeholder="Optional" />
+            </label>
+          )}
         </div>
       )}
     </div>

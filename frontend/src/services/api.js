@@ -64,6 +64,12 @@ export const apiService = {
 
   //Chatbot
   sendChatMessage: (chatData) => api.post("/chatbot/chat", chatData),
+
+  //OTA feature
+  getOTADevices: () => api.get('/ota/devices'),
+  refreshOTADevices: () => api.post('/ota/devices/refresh'),
+  uploadOTA: (data) => api.post('/ota/upload', data),
+
 };
 
 export default api;
