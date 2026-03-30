@@ -7,6 +7,7 @@ import Chatbot from "./components/Chatbot";
 import SerialMonitor from "./components/SerialMonitor";
 import { apiService } from "./services/api";
 import websocketService from "./services/websocket";
+import { Sun, Moon } from "lucide-react";
 
 const DEFAULT_CODE = `void setup() {
   // Initialize serial communication at 9600 baud
@@ -35,6 +36,18 @@ function App() {
   const [isUploading, setIsUploading] = useState(false);
   const [showSerialMonitor, setShowSerialMonitor] = useState(false);
   const [compilationId, setCompilationId] = useState(null);
+  const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "dark");
+
+  useEffect(() => {
+    if (theme === "light") {
+      document.body.classList.add("light-theme");
+    } else {
+      document.body.classList.remove("light-theme");
+    }
+    localStorage.setItem("theme", theme);
+  }, [theme]);
+
+  const toggleTheme = () => setTheme((prev) => (prev === "dark" ? "light" : "dark"));
 
   useEffect(() => {
     // Connect to compile WebSocket
@@ -194,6 +207,9 @@ function App() {
     <div className="app">
       <header className="app-header">
         <h1>Arduino IDE Online</h1>
+        <button onClick={toggleTheme} className="theme-toggle-btn" title="Toggle Theme">
+          {theme === "dark" ? <Sun size={20} /> : <Moon size={20} />}
+        </button>
       </header>
 
       <Toolbar
@@ -214,6 +230,7 @@ function App() {
             code={code}
             onChange={setCode}
             readOnly={isCompiling || isUploading}
+            theme={theme}
           />
         </div>
 

@@ -1,7 +1,7 @@
 import React from 'react';
 import MonacoEditor from '@monaco-editor/react';
 
-const Editor = ({ code, onChange, readOnly }) => {
+const Editor = ({ code, onChange, readOnly, theme }) => {
   const handleEditorChange = (value) => {
     if (onChange && !readOnly) {
       onChange(value);
@@ -28,7 +28,7 @@ const Editor = ({ code, onChange, readOnly }) => {
         value={code}
         onChange={handleEditorChange}
         options={editorOptions}
-        theme="vs-dark"
+        theme={theme === 'dark' ? 'vs-dark' : 'vs-light'}
       />
     </div>
   );
